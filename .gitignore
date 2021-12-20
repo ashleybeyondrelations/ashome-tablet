@@ -1,0 +1,9 @@
+*.tar.gz
+*.iml
+*.log
+target
+build/*
+.gradle/*
+.idea/*
+*.jar
+!gradle-wrapper.jar

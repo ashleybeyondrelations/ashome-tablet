@@ -1,0 +1,28 @@
+
+= Changelog Builder Dev-Utils
+
+== 2021-11-23
+
+=== Fixed
+
+* BEY 37 better gathers report designs
+
+== 2021-12-02
+
+=== Fixed
+
+* BEY 37 change birt report connections with any oda data source name
+
+////
+
+== 2021-11-
+
+=== Added
+
+=== Changed
+
+=== Fixed
+
+=== Removed
+
+////
