@@ -3,7 +3,9 @@ package com.ashome.core.servlet.startup
 import com.ashome.tablet.gesture.model.AhGestureRecorder
 import mu.KotlinLogging
 import org.springframework.boot.SpringApplication
-
+/*
+. /usr/local/ashux-system/tablet/join-to-display.sh
+ */
 internal open class InternalStartup (args: Array<String> ) {
     companion object{private val logger = KotlinLogging.logger {}}
     init {
@@ -16,7 +18,10 @@ internal open class InternalStartup (args: Array<String> ) {
     fun initialized()
     {
         System.setProperty("java.awt.headless", "false")
-        AhGestureRecorder.static.launch()
+
+//        AhGestureRecorder.static.launch()
+
+//        AhGestureRecorder.static.launch()
 
 //		SpringStatic.environment?.let { CoreApplicationStatic.utils.updateFrom(it) }
 

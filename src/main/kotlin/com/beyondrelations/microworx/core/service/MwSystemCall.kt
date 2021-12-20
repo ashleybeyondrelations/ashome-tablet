@@ -1,17 +1,23 @@
 package com.beyondrelations.microworx.core.service
 
+import mu.KotlinLogging
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 //wraps the java os call
 public data class MwSystemCall(
         val program:String,
         val arguments:List<String> = mutableListOf(),
         var isConsumeExceptions:Boolean=true,
+        var timeout:Int=60000,
         var waitForCompletion:Boolean = true
 )
 {
 
-
+companion object
+{
+    private val logger = KotlinLogging.logger {}
+}
     var actionOnSuccess:()->Unit={}
         set(value) {field = (value)}
 
@@ -22,13 +28,11 @@ public data class MwSystemCall(
         get() = processBuilder.directory()
         set(value) {processBuilder.directory(value)}
 
-    var command: List<String> = mutableListOf()
-        get() = processBuilder.command()
+    val command = mutableListOf<String>(program)
 
 
     private val processBuilder : ProcessBuilder
     init{
-        val command = mutableListOf<String>(program)
         command.addAll(arguments.toList())
         processBuilder = ProcessBuilder(command)
         //set up defaults for the process
@@ -42,10 +46,17 @@ public data class MwSystemCall(
     public fun execute()
     {
 
+        logger.info("calling ${command.joinToString ( " " )}")
         val action = {
             try {
                 val process = processBuilder.start()
-                process.waitFor()
+
+                logger.info("running")
+
+                if (!process.waitFor(timeout.toLong(),TimeUnit.MILLISECONDS))
+                    throw Exception("timed out running")
+
+                logger.info("done")
                 val exitCode = process.exitValue()
                 if (exitCode!=0)
                     throw Exception("system called failed with code : $exitCode")
@@ -54,9 +65,10 @@ public data class MwSystemCall(
             }
             catch (t : Throwable)
             {
+                logger.info("failed with ${t}")
+                actionOnError.invoke()
                 if (!isConsumeExceptions)
                     throw t
-                actionOnError.invoke()
             }
         }
 

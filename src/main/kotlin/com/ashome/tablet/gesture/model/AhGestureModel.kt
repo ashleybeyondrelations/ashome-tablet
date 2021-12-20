@@ -9,6 +9,13 @@ import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.awt.image.BufferedImage
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
+import java.time.Duration
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import javax.imageio.ImageIO
 import javax.swing.JComponent
 import javax.swing.JFrame
@@ -28,7 +35,7 @@ data class AhGesture(val desc:String, val systemCall: MwSystemCall)
 
 }
 
-class AhGestureRecorder : JFrame("gestureControl")
+class AhGestureRecorder
 {
 
     companion object {
@@ -38,20 +45,19 @@ class AhGestureRecorder : JFrame("gestureControl")
 
     private val backgroundPane = ImagePanel()
 
+    private val frame = JFrame("gestureControl")
+    private val overlay = AhGestureOverlay(frame)
+
     init{
-        val robot = Robot()
-//        val screenShot = robot.createScreenCapture(Rectangle(Toolkit.getDefaultToolkit().getScreenSize()))
-//        this.defaultCloseOperation = JFrame.HIDE_ON_CLOSE
-        this.add(backgroundPane)
-        val overlay = AhGestureOverlay(this)
+        frame.add(backgroundPane)
+//        this.add(JLabel("Should show"))
 
-        contentPane.addMouseListener(overlay)
-        contentPane.addMouseMotionListener(overlay)
+        frame.contentPane.addMouseListener(overlay)
+        frame.contentPane.addMouseMotionListener(overlay)
 
-        this.glassPane = overlay
+        frame.glassPane = overlay
 
-        val frame = this
-        this.addWindowListener(object : WindowAdapter() {
+        frame.addWindowListener(object : WindowAdapter() {
             override fun windowClosing(evt: WindowEvent) {
                 logger.info { "closing" }
                 frame.isVisible = false
@@ -64,30 +70,84 @@ class AhGestureRecorder : JFrame("gestureControl")
     var screenSize = Toolkit.getDefaultToolkit().getScreenSize()
 
     fun launch() {
-        screenSize = Toolkit.getDefaultToolkit().getScreenSize()
-        this.setBounds(0,0,screenSize.width,screenSize.height)
+//        frame.minimumSize = screenSize.size
+
+//            screenSize.width,screenSize.height)
         updateScreenImage()
-        this.isVisible = true
-        glassPane.isVisible = true
+        frame.pack()
+        frame.setBounds(0,0,screenSize.width,screenSize.height)
+
+//        showTest()
+        frame.isVisible = true
+        overlay.isVisible = true
+//        backgroundPane.isVisible = true
     }
+    fun showTest()
+    {
+        val testPanel = JFrame("gestureControl")
+        val rectangle = Rectangle(Toolkit.getDefaultToolkit().getScreenSize())
+//        testPanel.setGlassPane(TouchPanel(rectangle))
+//        testPanel.add(GestureControl.getScreenImage()?.let { com.ashome.tablet.ImagePanel(it) })
+        val overlay = AhGestureOverlay(testPanel)
+        testPanel.add(backgroundPane)
+        testPanel.contentPane.addMouseListener(overlay)
+        testPanel.contentPane.addMouseMotionListener(overlay)
+
+        testPanel.glassPane = overlay
+
+        testPanel.addWindowListener(object : WindowAdapter() {
+            override fun windowClosing(evt: WindowEvent) {
+                logger.info { "closing" }
+                testPanel.isVisible = false
+            }
+        })
+
+        testPanel.pack()
+        testPanel.setBounds(rectangle.x,rectangle.y,rectangle.width/2,rectangle.height/2)
+
+        overlay.isVisible =true
+        testPanel.isVisible =true
+    }
+//    var image:BufferedImage? = null
     fun updateScreenImage()
     {
-        val screenCapPath = "${System.getProperty("user.home")}/.local/state/ashux/screen.png"
 
-        val systemCall = MwSystemCall(program = "grim",arguments = listOf(screenCapPath), waitForCompletion = false )
+        val screenCapPath = "${System.getProperty("user.home")}/.local/state/ashux/screen.png"
+//"-t png",
+        if (File(screenCapPath).exists()){
+            val attr = Files.readAttributes(File(screenCapPath).toPath(), BasicFileAttributes::class.java)
+            if (Duration.between(
+                    LocalDateTime.ofInstant(attr.lastModifiedTime().toInstant(), ZoneId.systemDefault()),
+                    LocalDateTime.now()).toSeconds()<4)
+            {
+                backgroundPane.image = ImageIO.read( File(screenCapPath))
+                backgroundPane.repaint()
+            }
+            return
+        }
+
+        val systemCall = MwSystemCall(program = "grim",arguments = listOf(screenCapPath), waitForCompletion = true,timeout = 2000 )
 
         val setViaRobot = {
-            backgroundPane.image = robot.createScreenCapture(Rectangle(Toolkit.getDefaultToolkit().getScreenSize()))
+            val image = robot.createScreenCapture(Rectangle(Toolkit.getDefaultToolkit().screenSize))
+            backgroundPane.image = image
+            logger.info{ "size from robot ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
+//            backgroundPane.minimumSize=Dimension(image!!.width,image!!.height)
             backgroundPane.repaint()
+//            showTest()
         }
         val setViaFile = {
-            backgroundPane.image = ImageIO.read( File(screenCapPath))
+            val image = ImageIO.read( File(screenCapPath))
+            backgroundPane.image = image
+            logger.info{ "size from file ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
+//            backgroundPane.minimumSize=Dimension(image!!.width,image!!.height)
+//            backgroundPane.paint(backgroundPane.graphics)
             backgroundPane.repaint()
+//            showTest()
         }
 
         systemCall.actionOnSuccess = {
-            try{ setViaFile.invoke() }
-            catch (e:Exception){ setViaRobot.invoke() }
+            setViaFile.invoke()
         }
         systemCall.actionOnError = {
             setViaRobot.invoke()
@@ -99,18 +159,53 @@ class AhGestureRecorder : JFrame("gestureControl")
 
     internal class ImagePanel(image: BufferedImage?=null) : JPanel()
     {
+
+        companion object
+        {
+            private val GFX_CONFIG =
+                GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
+
+            fun toCompatibleImage(image: BufferedImage?): BufferedImage? {
+                /*
+     * if image is already compatible and optimized for current system settings, simply return it
+     */
+                if (image == null || image.colorModel == GFX_CONFIG.colorModel) {
+                    return image
+                }
+
+                // image is not optimized, so create a new image that is
+                val new_image = GFX_CONFIG.createCompatibleImage(image.width, image.height, image.transparency)
+
+                // get the graphics context of the new image to draw the old image on
+                val g2d = new_image.graphics as Graphics2D
+
+                // actually draw the image and dispose of context no longer needed
+                g2d.drawImage(image, 0, 0, null)
+                g2d.dispose()
+
+                // return the new optimized image
+                return new_image
+            }
+        }
+        var lastPaintedImage : BufferedImage? = null
         override fun paintComponent(g: Graphics) {
-            super.paintComponent(g)
+//        override fun paintComponent(g: Graphics) {
+//            super.paintComponent(g)
             //the third param is an ImageObserver. It allows for async images, which sound nice for this context
-            if (image!=null)
-                g.drawImage(image,0,0, null)
+            if (image!=null)// && (lastPaintedImage!=image || lastPaintedImage ==null))
+            {
+//                image.graphics
+                g.drawImage(image,0,0,null)
+            }
         }
         init{
-            this.isVisible = true
         }
 
-        var image: BufferedImage?=null
-        set(value) {field = value}
+        var image: BufferedImage? = null
+            set(value) {
+            field = ImagePanel.toCompatibleImage(value)
+        }
+
         init {
             this.image = image
         }
@@ -124,23 +219,26 @@ class AhGestureRecorder : JFrame("gestureControl")
 
         //React to change button clicks.
         override fun paintComponent(g: Graphics) {
+
+            (g as Graphics2D).stroke = BasicStroke(10F)
+
             if (current != null) {
                 g.color = Color.yellow
-                g.fillOval(current!!.x - 10, current!!.y - 10, 20, 20)
+//                g.fillOval(current!!.x - 10, current!!.y - 10, 20, 20)
+                g.drawOval(current!!.x-50, current!!.y-50,100,100)
             }
             if (clicked != null) {
                 g.color = Color.red
-                g.fillOval(clicked!!.x - 10, clicked!!.y - 10, 20, 20)
+                g.drawOval(clicked!!.x-50, clicked!!.y-50,100,100)
             }
             if (released != null) {
                 g.color = Color.green
-                g.fillOval(released!!.x - 10, released!!.y - 10, 20, 20)
+                g.drawOval(released!!.x-50, released!!.y-50,100,100)
             }
         }
 
 
         init {
-            isVisible = true
 
 //        val listener = CBListener(
 //                this, contentPane)
