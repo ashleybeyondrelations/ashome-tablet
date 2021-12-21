@@ -1,7 +1,6 @@
-package com.ashome.core.servlet.startup
+package com.ashome.core.servlet
 
 import com.ashome.tablet.gesture.model.AhGestureBackground
-import com.ashome.tablet.gesture.model.AhGestureRecorder
 import mu.KotlinLogging
 import org.springframework.boot.SpringApplication
 /*

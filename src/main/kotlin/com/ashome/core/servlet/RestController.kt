@@ -2,6 +2,7 @@ package com.ashome.core.servlet.controller
 
 import com.ashome.core.servlet.InternalStatic
 import com.ashome.tablet.gesture.model.AhGestureRecorder
+import com.ashome.tablet.model.AhTabletInput
 import com.ashome.tablet.model.AhTabletInputType
 import mu.KotlinLogging
 import org.springframework.web.bind.annotation.GetMapping
@@ -28,6 +29,8 @@ internal open class InternalREST( url : String) {
     fun keyEvent(@RequestParam(value = "key") key : String,
                  @RequestParam(value = "state") state : Boolean
     ) {
+        logger.info { "saw  $key to $state" }
+
         InternalStatic.tablet.getButtonByKey(key)?.triggerStateChange(state)
     }
 

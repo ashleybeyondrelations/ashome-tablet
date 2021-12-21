@@ -63,12 +63,12 @@ companion object
                 else
                     actionOnSuccess.invoke()
             }
-            catch (t : Throwable)
+            catch (e : Exception)
             {
-                logger.info("failed with ${t}")
+                logger.info("failed with ${e}")
                 actionOnError.invoke()
                 if (!isConsumeExceptions)
-                    throw t
+                    throw e
             }
         }
 

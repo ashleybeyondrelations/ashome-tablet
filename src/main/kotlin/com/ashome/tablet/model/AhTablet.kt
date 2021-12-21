@@ -1,7 +1,7 @@
 package com.ashome.tablet.model
 
-import com.ashome.tablet.gesture.model.AhGesture
 import com.ashome.tablet.gesture.model.AhGestureRecorder
+import com.beyondrelations.microworx.core.service.MwSystemCall
 import mu.KotlinLogging
 import java.time.Duration
 import java.time.LocalDateTime
@@ -18,22 +18,145 @@ internal fun <type> getMapFromTypedList(list : List<AhTyped<type>>):Map<type,AhT
     return retVal
 }
 
+//wraps the wvkbd-mobintl keyboard which is wayland compliant
+class AhVirtualKeyboard
+{
+    companion object{
+        final val keyboardProgram = "wvkbd-mobintl"
+    }
+
+    init{
+        close()
+    }
+
+    fun showBasic()
+    {
+        close()
+        keyboardState = true
+        MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l","full,special,dialer"),waitForCompletion = false).execute()
+
+    }
+    var keyboardState:Boolean = false
+    fun toggle()
+    {
+        if (keyboardState)
+            close()
+        else
+            showBasic()
+    }
+
+    fun close(){
+        keyboardState = false
+        MwSystemCall(program = "pkill", arguments= listOf("-f",keyboardProgram),waitForCompletion = true).execute()
+    }
+
+}
+enum class AhVirtualKeyboardLayers{
+    full,
+    special,
+    simple,
+    simplegrid,
+    dialer,
+    nav,
+    landscape,
+    composea,
+    composemath,
+    composepunctuation,
+    composebracket,
+    numlayouts
+}
+
 data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
     companion object{
         private val logger = KotlinLogging.logger {}
     }
+    val keyboard = AhVirtualKeyboard()
+    val keyboardLayers  = listOf<String>(
+        "full",
+        "special",
+        "simple",
+        "simplegrid",
+        "dialer",
+        "nav",
+        "landscape",
+        "composea",
+        "composemath",
+        "composepunctuation",
+        "composebracket",
+        "numlayouts"
+    )
+        /*
+        ComposeMath,
+        ComposePunctuation,
+        composebracket","numLayouts""
+                Cyrillic,
+        Arabic,
+        Emoji,
+        ComposeE,
+        ComposeY,
+        ComposeU,
+        ComposeI,
+        ComposeO,
+        ComposeW,
+        ComposeR,
+        ComposeT,
+        ComposeP,
+        ComposeS,
+        ComposeD,
+        ComposeF,
+        ComposeG,
+        ComposeH,
+        ComposeJ,
+        ComposeK,
+        ComposeL,
+        ComposeZ,
+        ComposeX,
+        ComposeC,
+        ComposeV,
+        ComposeB,
+        ComposeN,
+        ComposeM,
+*/
+
 
     constructor(buttonList : List<AhTabletInput>) : this(buttons = getMapFromTypedList(buttonList) as Map<AhTabletInputType,AhTabletInput>)
     init {
+
+        var curLayout = 0
+
         buttons[AhTabletInputType.HOME]?.addAction {evt:AhButtonEvent->
+            if (curLayout> keyboardLayers.size -1)
+                curLayout=0
             if (evt.held && evt.numberOfClicks == 1)
             {
                 AhGestureRecorder.static.launch()
             }
-            else if (evt.released && evt.numberOfClicks == 1)
+            else if (evt.releasedClick && evt.numberOfClicks == 1)
             {
-                logger.info{ "next time we will toggle keyboard..."}
+                keyboard.close()
+//                MwSystemCall(program = "pkill", arguments= listOf("-f","wvkbd-mobintl"),waitForCompletion = true).execute()
+                MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l",keyboardLayers[curLayout]),waitForCompletion = false).execute()
+                logger.info { "showing ${keyboardLayers[curLayout]}" }
+                curLayout++
+/*
+                if (keyboardState)
+                {
+                    keyboardState = false
+                    MwSystemCall(program = "pkill", arguments= listOf("-f wvkbd-mobint"),waitForCompletion = false).execute()
+                }
+                else
+                {
+
+                    keyboardState = true
+                    MwSystemCall(program = "wvkbd-mobint", arguments= listOf("-l wvkbd-mobint"),waitForCompletion = false).execute()
+
+                }
+
+ */
             }
+
+//            MwSystemCall(program = "pkill", arguments= listOf("-f wvkbd-mobint"),waitForCompletion = false).execute()
+
         }
     }
 
@@ -85,8 +208,8 @@ enum class  AhTabletInputType
 
 open class AhButtonEventHandler() : AhButtonListener   {
     companion object{
-        val millisBetweenEvents = 500L
-        val millisTillHold = 800L
+        val millisBetweenEvents = 400L
+        val millisTillHold = 400L
         private val logger = KotlinLogging.logger {}
 
     }
@@ -105,6 +228,7 @@ open class AhButtonEventHandler() : AhButtonListener   {
 
 
     override fun triggerStateChange(state: Boolean) {
+
         currentState = state
 
         if (currentState)
@@ -115,6 +239,7 @@ open class AhButtonEventHandler() : AhButtonListener   {
             val evt = AhButtonEvent(clicks,0,currentState)
 
             pressTimer.cancel()
+            pressTimer=Timer()
             pressTimer.schedule(millisBetweenEvents)
             {
                 sendEvent(evt)
@@ -122,21 +247,25 @@ open class AhButtonEventHandler() : AhButtonListener   {
 
             val longevt = AhButtonEvent(clicks,millisTillHold,currentState)
             holdTimer.cancel()
+            holdTimer=Timer()
             holdTimer.schedule(millisTillHold)
             {
-                sendEvent(evt)
+                sendEvent(longevt)
             }
 
         }
         else
         {
             lastReleased =  LocalDateTime.now()
-            val millisHeld = Duration.between(lastReleased,lastPressed).toMillis()
+            val millisHeld = Duration.between(lastPressed,lastReleased).toMillis()
             val evt = AhButtonEvent(clicks,millisHeld,currentState)
             releaseTimer.cancel()
             holdTimer.cancel()
+            releaseTimer=Timer()
+            holdTimer=Timer()
             releaseTimer.schedule(Math.max(0,millisHeld-millisBetweenEvents ))
             {
+                clicks = 0
                 sendEvent(evt)
             }
 
@@ -145,6 +274,7 @@ open class AhButtonEventHandler() : AhButtonListener   {
     }
     fun sendEvent(evt:AhButtonEvent)
     {
+        logger.info{"sending $evt"}
         for (curAction in actions)
             curAction.invoke(evt)
     }
@@ -161,7 +291,13 @@ data class AhButtonEvent (
     )
 {
     val held : Boolean
-    get() = pressed && millisHeld > 0
+    get() = pressed && millisHeld >= AhButtonEventHandler.millisTillHold
+
+    val releasedHold : Boolean
+        get() = released && millisHeld >= AhButtonEventHandler.millisTillHold
+
+    val releasedClick : Boolean
+        get() = released && millisHeld < AhButtonEventHandler.millisTillHold
 
     val released : Boolean
         get() = !pressed
