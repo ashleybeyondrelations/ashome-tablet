@@ -136,6 +136,10 @@ data class AhTabletAnalogFile(val name : String ,val range : Dimension, val devi
             }
         file = foundFile
     }
+    getValue()
+    {
+        return file.
+    }
 
 //    return FileUtils.listFiles(directory, WildcardFileFilter("in_accel_y_raw"), null);
     //Short.MAX/2
@@ -149,6 +153,12 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
     val xOrientation = AhTabletAnalogFile("in_accel_x_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
     val yOrientation = AhTabletAnalogFile("in_accel_y_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
     val zOrientation = AhTabletAnalogFile("in_accel_z_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
+
+    fun guessScreenRotation() : Int
+    {
+        val currentX = xOrientation
+        if (Math.abs())
+    }
 
 
     constructor(buttonList : List<AhTabletInput>) : this(buttons = getMapFromTypedList(buttonList) as Map<AhTabletInputType,AhTabletInput>)
