@@ -2,6 +2,7 @@ package com.ashome.core.servlet
 
 import com.ashome.core.servlet.controller.InternalREST
 import com.ashome.core.servlet.startup.InternalStartup
+import com.ashome.tablet.gesture.model.AhGestureBackground
 import com.ashome.tablet.gesture.model.AhGestureRecorder
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.builder.SpringApplicationBuilder
@@ -20,6 +21,7 @@ internal class InternalStatic {
 	companion object {
 		var environment: Environment? = null
 		const val baseUrl = "/ah-tablet"
+
 	}
 }
 @SpringBootApplication

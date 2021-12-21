@@ -46,17 +46,17 @@ companion object
     public fun execute()
     {
 
-        logger.info("calling ${command.joinToString ( " " )}")
+//        logger.info("calling ${command.joinToString ( " " )}")
         val action = {
             try {
                 val process = processBuilder.start()
 
-                logger.info("running")
+ //               logger.info("running")
 
                 if (!process.waitFor(timeout.toLong(),TimeUnit.MILLISECONDS))
                     throw Exception("timed out running")
 
-                logger.info("done")
+//                logger.info("done")
                 val exitCode = process.exitValue()
                 if (exitCode!=0)
                     throw Exception("system called failed with code : $exitCode")

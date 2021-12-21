@@ -1,5 +1,6 @@
 package com.ashome.core.servlet.startup
 
+import com.ashome.tablet.gesture.model.AhGestureBackground
 import com.ashome.tablet.gesture.model.AhGestureRecorder
 import mu.KotlinLogging
 import org.springframework.boot.SpringApplication
@@ -30,6 +31,7 @@ internal open class InternalStartup (args: Array<String> ) {
 //				CoreControllerServices.initializeAccess(servletProperties)
 //		}
         logger.info("Application Initialized ... ")
+        val bgProcess = AhGestureBackground().start()
     }
 
     fun destroyed()

@@ -35,21 +35,64 @@ data class AhGesture(val desc:String, val systemCall: MwSystemCall)
 
 }
 
-class AhGestureRecorder
+class AhGestureBackground
+{
+    companion object {
+        private val logger = KotlinLogging.logger {}
+    }
+    fun start(){
+
+        logger.info{ "checking grim" }
+
+        val grimCheck = MwSystemCall(program = "grim",arguments = listOf(AhGestureRecorder.screenCapPath), waitForCompletion = true )
+        grimCheck.actionOnSuccess = {
+            logger.info{ "background starting" }
+            val action = {
+                logger.info { "Running grim in background" }
+                while (true)
+                {
+                    Thread.sleep(3 * 1000)
+//                    if (!AhGestureRecorder.static.isVisible)
+                        MwSystemCall(program = "grim",arguments = listOf(AhGestureRecorder.screenCapPath), waitForCompletion = true ).execute()
+                }
+            }
+            Thread(action).start()
+        }
+        grimCheck.actionOnError = {
+            logger.info{ "background failed" }
+        }
+        grimCheck.execute()
+    }
+}
+class AhGestureRecorder():JFrame("gestureControl")
 {
 
     companion object {
         private val logger = KotlinLogging.logger {}
+        val screenCapPath = "${System.getProperty("user.home")}/.local/state/ashux/screen.png"
+
         val static = AhGestureRecorder()
+
     }
 
     private val backgroundPane = ImagePanel()
 
-    private val frame = JFrame("gestureControl")
+    private val frame = this
     private val overlay = AhGestureOverlay(frame)
 
     init{
         frame.add(backgroundPane)
+
+        if (GraphicsEnvironment.
+                getLocalGraphicsEnvironment().defaultScreenDevice.isWindowTranslucencySupported(GraphicsDevice.WindowTranslucency.TRANSLUCENT))
+        {
+            frame.setUndecorated(true)
+            frame.opacity = .0f
+        }
+        else{
+            logger.info { "DOES NOT SUPPORT TRANSPARENCY" }
+        }
+//        frame.isOpaque = false
 //        this.add(JLabel("Should show"))
 
         frame.contentPane.addMouseListener(overlay)
@@ -57,7 +100,11 @@ class AhGestureRecorder
 
         frame.glassPane = overlay
 
-        frame.addWindowListener(object : WindowAdapter() {
+        this.addWindowListener(object : WindowAdapter() {
+            override fun windowDeactivated(e: WindowEvent?) {
+                logger.info { "deactivated" }
+                frame.isVisible = false
+            }
             override fun windowClosing(evt: WindowEvent) {
                 logger.info { "closing" }
                 frame.isVisible = false
@@ -112,7 +159,6 @@ class AhGestureRecorder
     fun updateScreenImage()
     {
 
-        val screenCapPath = "${System.getProperty("user.home")}/.local/state/ashux/screen.png"
 //"-t png",
         if (File(screenCapPath).exists()){
             val attr = Files.readAttributes(File(screenCapPath).toPath(), BasicFileAttributes::class.java)
