@@ -3,6 +3,9 @@ package com.ashome.tablet.model
 import com.ashome.tablet.gesture.model.AhGestureRecorder
 import com.beyondrelations.microworx.core.service.MwSystemCall
 import mu.KotlinLogging
+import java.awt.Dimension
+import java.io.File
+import java.io.FileFilter
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.*
@@ -58,12 +61,84 @@ enum class AhVirtualKeyboardLayers{
     simplegrid,
     dialer,
     nav,
-    landscape,
-    composea,
-    composemath,
-    composepunctuation,
-    composebracket,
-    numlayouts
+    landscape
+
+    /*
+    ComposeMath,
+    ComposePunctuation,
+    composebracket","numLayouts""
+            Cyrillic,
+    Arabic,
+    Emoji,
+    ComposeE,
+    ComposeY,
+    ComposeU,
+    ComposeI,
+    ComposeO,
+    ComposeW,
+    ComposeR,
+    ComposeT,
+    ComposeP,
+    ComposeS,
+    ComposeD,
+    ComposeF,
+    ComposeG,
+    ComposeH,
+    ComposeJ,
+    ComposeK,
+    ComposeL,
+    ComposeZ,
+    ComposeX,
+    ComposeC,
+    ComposeV,
+    ComposeB,
+    ComposeN,
+    ComposeM,
+*/
+
+}
+
+class AhScreen()
+{
+//command to rotate
+//    swaymsg -- output  DSI-1 transform 0
+
+//command to get accelerometer
+    /*
+//    #!/usr/bin/env sh
+    ROTATION_GRAVITY="${ROTATION_GRAVITY:-"16374"}"
+    ROTATION_THRESHOLD="${ROTATION_THRESHOLD:-"400"}"
+    POLL_TIME=1
+    RIGHT_SIDE_UP="$(echo "$ROTATION_GRAVITY - $ROTATION_THRESHOLD" | bc)"
+    UPSIDE_DOWN="$(echo "-$ROTATION_GRAVITY + $ROTATION_THRESHOLD" | bc)"
+    //FILE_Y="$(find /sys/bus/iio/devices/iio:device-iname in_accel_y_raw)"
+    //FILE_X="$(find /sys/bus/iio/devices/iio:device* -iname in_accel_x_raw)"
+
+*/
+
+    fun rotateBasedOnAccelerometer()
+    {
+
+    }
+
+}
+data class AhTabletAnalogFile(val name : String ,val range : Dimension, val devicesFolder: File = File("/sys/bus/iio/devices/"))
+{
+    val file : File?
+
+    init{
+        var foundFile:File? = null
+        for (curDir in devicesFolder.listFiles(FileFilter { it.isDirectory }))
+            if (curDir.listFiles(FileFilter{it.name == name}).isNotEmpty())
+            {
+                foundFile = curDir.listFiles(FileFilter{it.name == name})[0]
+                break
+            }
+        file = foundFile
+    }
+
+//    return FileUtils.listFiles(directory, WildcardFileFilter("in_accel_y_raw"), null);
+    //Short.MAX/2
 }
 
 data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
@@ -71,52 +146,9 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
         private val logger = KotlinLogging.logger {}
     }
     val keyboard = AhVirtualKeyboard()
-    val keyboardLayers  = listOf<String>(
-        "full",
-        "special",
-        "simple",
-        "simplegrid",
-        "dialer",
-        "nav",
-        "landscape",
-        "composea",
-        "composemath",
-        "composepunctuation",
-        "composebracket",
-        "numlayouts"
-    )
-        /*
-        ComposeMath,
-        ComposePunctuation,
-        composebracket","numLayouts""
-                Cyrillic,
-        Arabic,
-        Emoji,
-        ComposeE,
-        ComposeY,
-        ComposeU,
-        ComposeI,
-        ComposeO,
-        ComposeW,
-        ComposeR,
-        ComposeT,
-        ComposeP,
-        ComposeS,
-        ComposeD,
-        ComposeF,
-        ComposeG,
-        ComposeH,
-        ComposeJ,
-        ComposeK,
-        ComposeL,
-        ComposeZ,
-        ComposeX,
-        ComposeC,
-        ComposeV,
-        ComposeB,
-        ComposeN,
-        ComposeM,
-*/
+    val xOrientation = AhTabletAnalogFile("in_accel_x_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
+    val yOrientation = AhTabletAnalogFile("in_accel_y_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
+    val zOrientation = AhTabletAnalogFile("in_accel_z_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
 
 
     constructor(buttonList : List<AhTabletInput>) : this(buttons = getMapFromTypedList(buttonList) as Map<AhTabletInputType,AhTabletInput>)
@@ -125,34 +157,20 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
         var curLayout = 0
 
         buttons[AhTabletInputType.HOME]?.addAction {evt:AhButtonEvent->
-            if (curLayout> keyboardLayers.size -1)
-                curLayout=0
+            if (evt.pressed && evt.numberOfClicks == 1)
+            {
+            }
             if (evt.held && evt.numberOfClicks == 1)
             {
                 AhGestureRecorder.static.launch()
             }
             else if (evt.releasedClick && evt.numberOfClicks == 1)
             {
-                keyboard.close()
-//                MwSystemCall(program = "pkill", arguments= listOf("-f","wvkbd-mobintl"),waitForCompletion = true).execute()
-                MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l",keyboardLayers[curLayout]),waitForCompletion = false).execute()
-                logger.info { "showing ${keyboardLayers[curLayout]}" }
-                curLayout++
-/*
-                if (keyboardState)
-                {
-                    keyboardState = false
-                    MwSystemCall(program = "pkill", arguments= listOf("-f wvkbd-mobint"),waitForCompletion = false).execute()
-                }
-                else
-                {
-
-                    keyboardState = true
-                    MwSystemCall(program = "wvkbd-mobint", arguments= listOf("-l wvkbd-mobint"),waitForCompletion = false).execute()
-
-                }
-
- */
+                keyboard.toggle()
+            }
+            if (evt.held && evt.numberOfClicks == 2)
+            {
+                AhGestureRecorder.static.launch()
             }
 
 //            MwSystemCall(program = "pkill", arguments= listOf("-f wvkbd-mobint"),waitForCompletion = false).execute()
@@ -164,8 +182,11 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
     fun getButtonByKey(key : String) : AhTabletInput?
     {
         for (curButton in buttons.values)
+        {
+            logger.info { "is $curButton a $key" }
             if (curButton.key==key)
                 return curButton
+        }
 
         return null
     }
@@ -263,7 +284,7 @@ open class AhButtonEventHandler() : AhButtonListener   {
             holdTimer.cancel()
             releaseTimer=Timer()
             holdTimer=Timer()
-            releaseTimer.schedule(Math.max(0,millisHeld-millisBetweenEvents ))
+            releaseTimer.schedule(Math.max(0,millisBetweenEvents-millisHeld ))
             {
                 clicks = 0
                 sendEvent(evt)

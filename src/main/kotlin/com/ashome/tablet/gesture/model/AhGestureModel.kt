@@ -3,19 +3,13 @@ package com.ashome.tablet.gesture.model
 import com.beyondrelations.microworx.core.service.MwSystemCall
 import mu.KotlinLogging
 import java.awt.*
+import java.awt.datatransfer.DataFlavor
 import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionListener
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.awt.image.BufferedImage
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.attribute.BasicFileAttributes
-import java.nio.file.attribute.FileTime
-import java.time.Duration
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
 import javax.imageio.ImageIO
 import javax.swing.JComponent
 import javax.swing.JFrame
@@ -160,6 +154,7 @@ class AhGestureRecorder():JFrame("gestureControl")
     {
 
 //"-t png",
+        /*
         if (File(screenCapPath).exists()){
             val attr = Files.readAttributes(File(screenCapPath).toPath(), BasicFileAttributes::class.java)
             if (Duration.between(
@@ -171,24 +166,29 @@ class AhGestureRecorder():JFrame("gestureControl")
             }
             return
         }
+         */
 
-        val systemCall = MwSystemCall(program = "grim",arguments = listOf(screenCapPath), waitForCompletion = true,timeout = 2000 )
+        val systemCall = MwSystemCall(program = "grim",arguments = listOf("-s .2",screenCapPath), waitForCompletion = true,timeout = 2000 )
+//        val systemCall = MwSystemCall(program = "grim",arguments = listOf("-","| wl-copy"), waitForCompletion = true,timeout = 2000 )
 
         val setViaRobot = {
             val image = robot.createScreenCapture(Rectangle(Toolkit.getDefaultToolkit().screenSize))
-            backgroundPane.image = image
-            logger.info{ "size from robot ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
+            backgroundPane.update(image)
+//            logger.info{ "size from robot ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
 //            backgroundPane.minimumSize=Dimension(image!!.width,image!!.height)
-            backgroundPane.repaint()
+//            backgroundPane.repaint()
 //            showTest()
         }
         val setViaFile = {
             val image = ImageIO.read( File(screenCapPath))
-            backgroundPane.image = image
-            logger.info{ "size from file ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
+//            val image = ImagePanel.getImageFromClipboard()
+            if (image!=null)
+            backgroundPane.update(image,this.width,this.height)
+//            backgroundPane.image = image
+//            logger.info{ "size from file ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
 //            backgroundPane.minimumSize=Dimension(image!!.width,image!!.height)
 //            backgroundPane.paint(backgroundPane.graphics)
-            backgroundPane.repaint()
+//            backgroundPane.repaint()
 //            showTest()
         }
 
@@ -210,6 +210,17 @@ class AhGestureRecorder():JFrame("gestureControl")
         {
             private val GFX_CONFIG =
                 GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
+
+//            @Throws(Exception::class)
+            fun getImageFromClipboard(): BufferedImage? {
+                return try {
+                    val transferable = Toolkit.getDefaultToolkit().systemClipboard.getContents(null)
+                    transferable.getTransferData(DataFlavor.imageFlavor) as BufferedImage
+
+                } catch (e:Exception){
+                    null
+                }
+            }
 
             fun toCompatibleImage(image: BufferedImage?): BufferedImage? {
                 /*
@@ -241,13 +252,24 @@ class AhGestureRecorder():JFrame("gestureControl")
             if (image!=null)// && (lastPaintedImage!=image || lastPaintedImage ==null))
             {
 //                image.graphics
-                g.drawImage(image,0,0,null)
+                val localWidth = width ?: image!!.width
+                val localHeight = height ?: image!!.height
+                g.drawImage(image,0,0,localWidth,localHeight,null)
             }
         }
         init{
         }
 
-        var image: BufferedImage? = null
+        private var width:Int?=null
+        private var height:Int?=null
+        fun update(image:BufferedImage,width:Int?=null,height:Int?=null)
+        {
+            this.image=image
+            this.width = width
+            this.height = height
+            this.repaint()
+        }
+        private var image: BufferedImage? = null
             set(value) {
             field = ImagePanel.toCompatibleImage(value)
         }

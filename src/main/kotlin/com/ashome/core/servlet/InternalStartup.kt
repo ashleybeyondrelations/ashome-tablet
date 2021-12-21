@@ -2,7 +2,11 @@ package com.ashome.core.servlet
 
 import com.ashome.tablet.gesture.model.AhGestureBackground
 import mu.KotlinLogging
+import org.apache.tomcat.util.http.fileupload.FileUtils
 import org.springframework.boot.SpringApplication
+import java.io.File
+import java.io.FileFilter
+
 /*
 . /usr/local/ashux-system/tablet/join-to-display.sh
  */
@@ -18,7 +22,6 @@ internal open class InternalStartup (args: Array<String> ) {
     fun initialized()
     {
         System.setProperty("java.awt.headless", "false")
-
 //        AhGestureRecorder.static.launch()
 
 //        AhGestureRecorder.static.launch()
@@ -30,7 +33,7 @@ internal open class InternalStartup (args: Array<String> ) {
 //				CoreControllerServices.initializeAccess(servletProperties)
 //		}
         logger.info("Application Initialized ... ")
-        val bgProcess = AhGestureBackground().start()
+//        val bgProcess = AhGestureBackground().start()
     }
 
     fun destroyed()
