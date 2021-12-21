@@ -51,8 +51,8 @@ class AhGestureBackground
                 logger.info { "Running grim in background" }
                 while (true)
                 {
-                    Thread.sleep(3 * 1000)
-//                    if (!AhGestureRecorder.static.isVisible)
+                    Thread.sleep(1 * 1000)
+                    if (!AhGestureRecorder.static.isVisible)
                         MwSystemCall(program = "grim",arguments = listOf(AhGestureRecorder.screenCapPath), waitForCompletion = true ).execute()
                 }
             }
