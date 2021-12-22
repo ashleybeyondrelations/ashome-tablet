@@ -6,6 +6,7 @@ import mu.KotlinLogging
 import java.awt.Dimension
 import java.io.File
 import java.io.FileFilter
+import java.io.InputStream
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.*
@@ -20,6 +21,90 @@ internal fun <type> getMapFromTypedList(list : List<AhTyped<type>>):Map<type,AhT
 
     return retVal
 }
+
+data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
+    companion object{
+        private val logger = KotlinLogging.logger {}
+    }
+    constructor(buttonList : List<AhTabletInput>) : this(buttons = getMapFromTypedList(buttonList) as Map<AhTabletInputType,AhTabletInput>)
+    init {
+
+        var curLayout = 0
+
+        buttons[AhTabletInputType.HOME]?.addAction {evt:AhButtonEvent->
+            if (evt.pressed && evt.numberOfClicks == 1)
+            {
+            }
+            if (evt.held && evt.numberOfClicks == 1)
+            {
+                AhGestureRecorder.static.launch()
+            }
+            else if (evt.releasedClick && evt.numberOfClicks == 1)
+            {
+                keyboard.toggle()
+            }
+            if (evt.held && evt.numberOfClicks == 2)
+            {
+                this.screen.rotate(calcScreenRotation(true))
+            }
+            else if (evt.releasedClick && evt.numberOfClicks == 2)
+            {
+                keyboard.showDouble()
+            }
+
+
+
+//            MwSystemCall(program = "pkill", arguments= listOf("-f wvkbd-mobint"),waitForCompletion = false).execute()
+
+        }
+    }
+
+
+    val keyboard = AhVirtualKeyboard()
+    val xOrientation = AhTabletAnalogFile("in_accel_x_raw" , Short.MIN_VALUE/2.0)
+    val yOrientation = AhTabletAnalogFile("in_accel_y_raw" , Short.MIN_VALUE/2.0)
+    val zOrientation = AhTabletAnalogFile("in_accel_z_raw" , Short.MIN_VALUE/2.0)
+    val screen = AhScreen()
+
+    //rotation occurs in 90 degree increments clockwise
+    var currentRotation = 0
+
+    fun calcScreenRotation(forceRotate : Boolean) : Int
+    {
+        val changeRotation = Math.abs(Math.abs(xOrientation.value) - Math.abs(yOrientation.value)) > .3
+        logger.info { "current accel is ${xOrientation.value} x ${yOrientation.value}"  }
+        if (!changeRotation&&!forceRotate)
+            return currentRotation
+
+        if (Math.abs(xOrientation.value) > Math.abs(yOrientation.value))
+            if (xOrientation.value<0)
+                currentRotation = 0
+            else
+                currentRotation = 180
+        else
+            if (yOrientation.value<0)
+                currentRotation = 270
+            else
+                currentRotation = 90
+
+        return currentRotation
+    }
+
+
+
+
+    fun getButtonByKey(key : String) : AhTabletInput?
+    {
+        for (curButton in buttons.values)
+        {
+            if (curButton.key==key)
+                return curButton
+        }
+
+        return null
+    }
+}
+
 
 //wraps the wvkbd-mobintl keyboard which is wayland compliant
 class AhVirtualKeyboard
@@ -37,8 +122,15 @@ class AhVirtualKeyboard
         close()
         keyboardState = true
         MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l","full,special,dialer"),waitForCompletion = false).execute()
-
     }
+    fun showDouble()
+    {
+        close()
+        keyboardState = true
+        MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l","dialer"),waitForCompletion = false).execute()
+        MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l","full,special"),waitForCompletion = false).execute()
+    }
+
     var keyboardState:Boolean = false
     fun toggle()
     {
@@ -103,28 +195,24 @@ class AhScreen()
 //command to rotate
 //    swaymsg -- output  DSI-1 transform 0
 
-//command to get accelerometer
-    /*
-//    #!/usr/bin/env sh
-    ROTATION_GRAVITY="${ROTATION_GRAVITY:-"16374"}"
-    ROTATION_THRESHOLD="${ROTATION_THRESHOLD:-"400"}"
-    POLL_TIME=1
-    RIGHT_SIDE_UP="$(echo "$ROTATION_GRAVITY - $ROTATION_THRESHOLD" | bc)"
-    UPSIDE_DOWN="$(echo "-$ROTATION_GRAVITY + $ROTATION_THRESHOLD" | bc)"
-    //FILE_Y="$(find /sys/bus/iio/devices/iio:device-iname in_accel_y_raw)"
-    //FILE_X="$(find /sys/bus/iio/devices/iio:device* -iname in_accel_x_raw)"
+    companion object{
+        private val logger = KotlinLogging.logger {}
+    }
 
-*/
-
-    fun rotateBasedOnAccelerometer()
+    fun rotate(degrees : Int)
     {
+        logger.info{"swaymsg -- output  DSI-1 transform $degrees"}
+        MwSystemCall(program = "swaymsg", arguments= listOf("--","output DSI-1 transform $degrees"),waitForCompletion = true).execute()
 
     }
 
 }
-data class AhTabletAnalogFile(val name : String ,val range : Dimension, val devicesFolder: File = File("/sys/bus/iio/devices/"))
+data class AhTabletAnalogFile(val name : String ,val max : Double, val devicesFolder: File = File("/sys/bus/iio/devices/"))
 {
     val file : File?
+    companion object{
+        private val logger = KotlinLogging.logger {}
+    }
 
     init{
         var foundFile:File? = null
@@ -136,71 +224,18 @@ data class AhTabletAnalogFile(val name : String ,val range : Dimension, val devi
             }
         file = foundFile
     }
-    getValue()
-    {
-        return file.
+    val value : Double
+    get() {
+        if (file!=null)
+                return ((file.inputStream().bufferedReader().use{ it.readText() }).toDoubleOrNull() ?: 0.0 )/max
+        else return 0.0
     }
 
 //    return FileUtils.listFiles(directory, WildcardFileFilter("in_accel_y_raw"), null);
     //Short.MAX/2
 }
 
-data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
-    companion object{
-        private val logger = KotlinLogging.logger {}
-    }
-    val keyboard = AhVirtualKeyboard()
-    val xOrientation = AhTabletAnalogFile("in_accel_x_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
-    val yOrientation = AhTabletAnalogFile("in_accel_y_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
-    val zOrientation = AhTabletAnalogFile("in_accel_z_raw" , Dimension(Short.MIN_VALUE/2,Short.MAX_VALUE/2))
 
-    fun guessScreenRotation() : Int
-    {
-        val currentX = xOrientation
-        if (Math.abs())
-    }
-
-
-    constructor(buttonList : List<AhTabletInput>) : this(buttons = getMapFromTypedList(buttonList) as Map<AhTabletInputType,AhTabletInput>)
-    init {
-
-        var curLayout = 0
-
-        buttons[AhTabletInputType.HOME]?.addAction {evt:AhButtonEvent->
-            if (evt.pressed && evt.numberOfClicks == 1)
-            {
-            }
-            if (evt.held && evt.numberOfClicks == 1)
-            {
-                AhGestureRecorder.static.launch()
-            }
-            else if (evt.releasedClick && evt.numberOfClicks == 1)
-            {
-                keyboard.toggle()
-            }
-            if (evt.held && evt.numberOfClicks == 2)
-            {
-                AhGestureRecorder.static.launch()
-            }
-
-//            MwSystemCall(program = "pkill", arguments= listOf("-f wvkbd-mobint"),waitForCompletion = false).execute()
-
-        }
-    }
-
-
-    fun getButtonByKey(key : String) : AhTabletInput?
-    {
-        for (curButton in buttons.values)
-        {
-            logger.info { "is $curButton a $key" }
-            if (curButton.key==key)
-                return curButton
-        }
-
-        return null
-    }
-}
 
 class AhTabletInput(override val type : AhTabletInputType, val key:String, val device : String ="") : AhTyped<AhTabletInputType>,  AhButtonEventHandler()
 {
@@ -240,7 +275,7 @@ enum class  AhTabletInputType
 open class AhButtonEventHandler() : AhButtonListener   {
     companion object{
         val millisBetweenEvents = 400L
-        val millisTillHold = 400L
+        val millisTillHold = 250L
         private val logger = KotlinLogging.logger {}
 
     }
@@ -271,6 +306,8 @@ open class AhButtonEventHandler() : AhButtonListener   {
 
             pressTimer.cancel()
             pressTimer=Timer()
+            releaseTimer.cancel()
+            releaseTimer=Timer()
             pressTimer.schedule(millisBetweenEvents)
             {
                 sendEvent(evt)
