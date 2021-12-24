@@ -26,8 +26,10 @@ repositories {
 }
 
 dependencies {
-	compileOnly(kotlin("reflect"))
-	compileOnly("org.jetbrains.kotlinx:kotlinx-serialization-runtime:1.0-M1-1.4.0-rc-218")
+//	compileOnly(kotlin("reflect"))
+	implementation(kotlin("reflect"))
+	implementation("org.jetbrains.kotlinx:kotlinx-serialization-runtime:1.0-M1-1.4.0-rc-218")
+	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0")
 
 	implementation("com.fasterxml.jackson.core:jackson-core:2.13.0")
 	implementation("io.github.microutils:kotlin-logging:2.1.20")

@@ -1,16 +1,25 @@
 package com.ashome.tablet.model
 
+import com.ashome.core.servlet.InternalStartup
+import com.ashome.core.servlet.InternalStatic
 import com.ashome.tablet.gesture.model.AhGestureRecorder
 import com.beyondrelations.microworx.core.service.MwSystemCall
+import com.beyondrelations.microworx.core.service.MwTimer
+import com.beyondrelations.microworx.core.service.TwmNode
 import mu.KotlinLogging
-import java.awt.Dimension
+import org.apache.tomcat.jni.Lock
+import org.springframework.web.servlet.function.ServerResponse.async
 import java.io.File
 import java.io.FileFilter
-import java.io.InputStream
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.*
-import kotlin.concurrent.schedule
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 internal fun <type> getMapFromTypedList(list : List<AhTyped<type>>):Map<type,AhTyped<type>>
 {
@@ -22,6 +31,68 @@ internal fun <type> getMapFromTypedList(list : List<AhTyped<type>>):Map<type,AhT
     return retVal
 }
 
+interface AhWindowManager{
+    companion object {
+        fun determine() : AhWindowManager{
+            if (System.getenv("SWAYSOCK")!=null)
+                return AhSwayManager()
+            else if (System.getenv("I3SOCK")!=null)
+                return AhI3Manager()
+            else if (File("/usr/bin/i3").exists())
+                return AhI3Manager()
+
+            return AhI3Manager()
+        }
+    }
+    val msgCommand:String;
+    fun getTreeBlocking() : TwmNode? = runBlocking {
+        val caller = MwSystemCall(msgCommand,listOf("-t","get_tree"))
+
+//        val channel = Channel<Int>()
+//        for (y in channel){}
+        val nodeWaiter = CompletableDeferred<TwmNode?>()
+
+//        var tree :TwmNode? = null
+        caller.actionOnSuccess ={evt->
+            nodeWaiter.complete(TwmNode.deserialize(evt.output))
+        }
+        caller.actionOnError ={ nodeWaiter.complete(null) }
+        caller.execute()
+
+//        GlobalScope.launch{//(Dispatchers.IO) {
+//            tree = nodeWaiter.await()
+//        }.join()
+        return@runBlocking nodeWaiter.await()
+    }
+    suspend fun getTree() : TwmNode? {
+
+        val caller = MwSystemCall(msgCommand,listOf("-t","get_tree"))
+
+//        val channel = Channel<Int>()
+//        for (y in channel){}
+        val nodeWaiter = CompletableDeferred<TwmNode?>()
+
+//        var tree :TwmNode? = null
+        caller.actionOnSuccess ={evt->
+            nodeWaiter.complete(TwmNode.deserialize(evt.output))
+        }
+        caller.actionOnError ={ nodeWaiter.complete(null) }
+        caller.execute()
+        return nodeWaiter.await()
+    }
+}
+class AhI3Manager():AhWindowManager
+{
+    override val msgCommand: String = "i3-msg"
+
+}
+
+class AhSwayManager():AhWindowManager
+{
+    override val msgCommand: String = "swaymsg"
+
+}
+
 data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
     companion object{
         private val logger = KotlinLogging.logger {}
@@ -30,14 +101,19 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
     init {
 
         var curLayout = 0
-
         buttons[AhTabletInputType.HOME]?.addAction {evt:AhButtonEvent->
             if (evt.pressed && evt.numberOfClicks == 1)
             {
             }
             if (evt.held && evt.numberOfClicks == 1)
             {
-                AhGestureRecorder.static.launch()
+
+//                val tree = InternalStatic.tablet.windowManager.getTree()
+//                InternalStartup.logger.info { tree }
+
+                keyboard.close()
+                GlobalScope.launch {  gestureRecorder.updateUI(windowManager.getTree()) }
+                gestureRecorder.display()
             }
             else if (evt.releasedClick && evt.numberOfClicks == 1)
             {
@@ -45,11 +121,16 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
             }
             if (evt.held && evt.numberOfClicks == 2)
             {
-                this.screen.rotate(calcScreenRotation(true))
+                rotateWhenWarranted(true)
+                autoRotateService.resume()
             }
             else if (evt.releasedClick && evt.numberOfClicks == 2)
             {
                 keyboard.showDouble()
+            }
+            if (evt.releasedHold && evt.numberOfClicks == 2)
+            {
+                autoRotateService.pause()
             }
 
 
@@ -59,6 +140,10 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
         }
     }
 
+    val windowManager = AhWindowManager.determine()
+    val gestureRecorder = AhGestureRecorder()
+    val autoRotateService = MwTimer(rate = 50, startOnInit = false, repeat = true, action = { rotateWhenWarranted() })
+
 
     val keyboard = AhVirtualKeyboard()
     val xOrientation = AhTabletAnalogFile("in_accel_x_raw" , Short.MIN_VALUE/2.0)
@@ -66,10 +151,17 @@ data class AhTablet (val buttons : Map<AhTabletInputType,AhTabletInput>) {
     val zOrientation = AhTabletAnalogFile("in_accel_z_raw" , Short.MIN_VALUE/2.0)
     val screen = AhScreen()
 
-    //rotation occurs in 90 degree increments clockwise
-    var currentRotation = 0
+    fun rotateWhenWarranted(forceRotate: Boolean = false) {
+        val lastRotation = currentRotation
+        val newRotation = calcScreenRotation(forceRotate)
+        if (forceRotate || newRotation!=lastRotation)
+            screen.rotate(newRotation)
+    }
 
-    fun calcScreenRotation(forceRotate : Boolean) : Int
+    //rotation in degrees
+    var currentRotation:Int = 0
+
+    fun calcScreenRotation(forceRotate : Boolean=false) : Int
     {
         val changeRotation = Math.abs(Math.abs(xOrientation.value) - Math.abs(yOrientation.value)) > .3
         logger.info { "current accel is ${xOrientation.value} x ${yOrientation.value}"  }
@@ -121,14 +213,14 @@ class AhVirtualKeyboard
     {
         close()
         keyboardState = true
-        MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l","full,special,dialer"),waitForCompletion = false).execute()
+        MwSystemCall(program = "wvkbd-mobintl", arguments = listOf("-l","full,special,dialer"), waitForCompletion = false).execute()
     }
     fun showDouble()
     {
         close()
         keyboardState = true
-        MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l","dialer"),waitForCompletion = false).execute()
-        MwSystemCall(program = "wvkbd-mobintl", arguments= listOf("-l","full,special"),waitForCompletion = false).execute()
+        MwSystemCall(program = "wvkbd-mobintl", arguments = listOf("-l","dialer"), waitForCompletion = false).execute()
+        MwSystemCall(program = "wvkbd-mobintl", arguments = listOf("-l","full,special"), waitForCompletion = false).execute()
     }
 
     var keyboardState:Boolean = false
@@ -142,7 +234,7 @@ class AhVirtualKeyboard
 
     fun close(){
         keyboardState = false
-        MwSystemCall(program = "pkill", arguments= listOf("-f",keyboardProgram),waitForCompletion = true).execute()
+        MwSystemCall(program = "pkill", arguments = listOf("-f",keyboardProgram), waitForCompletion = true).execute()
     }
 
 }
@@ -202,7 +294,7 @@ class AhScreen()
     fun rotate(degrees : Int)
     {
         logger.info{"swaymsg -- output  DSI-1 transform $degrees"}
-        MwSystemCall(program = "swaymsg", arguments= listOf("--","output DSI-1 transform $degrees"),waitForCompletion = true).execute()
+        MwSystemCall(program = "swaymsg", arguments = listOf("--","output DSI-1 transform $degrees"), waitForCompletion = true).execute()
 
     }
 
@@ -216,13 +308,17 @@ data class AhTabletAnalogFile(val name : String ,val max : Double, val devicesFo
 
     init{
         var foundFile:File? = null
-        for (curDir in devicesFolder.listFiles(FileFilter { it.isDirectory }))
-            if (curDir.listFiles(FileFilter{it.name == name}).isNotEmpty())
-            {
-                foundFile = curDir.listFiles(FileFilter{it.name == name})[0]
-                break
-            }
+        if (devicesFolder.exists())
+        {
+            for (curDir in devicesFolder.listFiles(FileFilter { it.isDirectory }))
+                if (curDir.listFiles(FileFilter{it.name == name}).isNotEmpty())
+                {
+                    foundFile = curDir.listFiles(FileFilter{it.name == name})[0]
+                    break
+                }
+        }
         file = foundFile
+
     }
     val value : Double
     get() {
@@ -288,12 +384,16 @@ open class AhButtonEventHandler() : AhButtonListener   {
     private var lastReleased : LocalDateTime = LocalDateTime.now()
     private var currentState : Boolean = false
     private var clicks : Int = 0
-    private var pressTimer : Timer= Timer()
-    private var holdTimer : Timer= Timer()
-    private var releaseTimer : Timer= Timer()
+    private var pressTimer : MwTimer= MwTimer(delay = millisBetweenEvents, action = {})
+    private var holdTimer : MwTimer= MwTimer(delay = millisTillHold, action = {})
+    private var releaseTimer : MwTimer= MwTimer(delay = 0, action = {})
 
 
     override fun triggerStateChange(state: Boolean) {
+
+        //kludge to work around the lack of --no-repeat in i3
+        if (currentState == state)
+            return
 
         currentState = state
 
@@ -304,35 +404,22 @@ open class AhButtonEventHandler() : AhButtonListener   {
 
             val evt = AhButtonEvent(clicks,0,currentState)
 
-            pressTimer.cancel()
-            pressTimer=Timer()
-            releaseTimer.cancel()
-            releaseTimer=Timer()
-            pressTimer.schedule(millisBetweenEvents)
-            {
-                sendEvent(evt)
-            }
+
+            pressTimer = pressTimer.replace { sendEvent(evt) }
+            releaseTimer.pause()
 
             val longevt = AhButtonEvent(clicks,millisTillHold,currentState)
-            holdTimer.cancel()
-            holdTimer=Timer()
-            holdTimer.schedule(millisTillHold)
-            {
-                sendEvent(longevt)
-            }
 
+            holdTimer = holdTimer.replace { sendEvent(longevt) }
         }
         else
         {
             lastReleased =  LocalDateTime.now()
             val millisHeld = Duration.between(lastPressed,lastReleased).toMillis()
             val evt = AhButtonEvent(clicks,millisHeld,currentState)
-            releaseTimer.cancel()
-            holdTimer.cancel()
-            releaseTimer=Timer()
-            holdTimer=Timer()
-            releaseTimer.schedule(Math.max(0,millisBetweenEvents-millisHeld ))
-            {
+            holdTimer.pause()
+
+            releaseTimer = releaseTimer.replace(delay = Math.max(0,millisBetweenEvents-millisHeld )) {
                 clicks = 0
                 sendEvent(evt)
             }

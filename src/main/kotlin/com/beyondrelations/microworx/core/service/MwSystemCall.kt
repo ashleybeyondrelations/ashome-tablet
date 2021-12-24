@@ -3,14 +3,24 @@ package com.beyondrelations.microworx.core.service
 import mu.KotlinLogging
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+
+import java.lang.Compiler.command
+
+
 
 //wraps the java os call
-public data class MwSystemCall(
+public data class MwCallEvent(val exitCode:Int, val output:String, val errorStream:String )
+data class MwSystemCall(
         val program:String,
         val arguments:List<String> = mutableListOf(),
         var isConsumeExceptions:Boolean=true,
         var timeout:Int=60000,
-        var waitForCompletion:Boolean = true
+        var waitForCompletion:Boolean = true,
+        var actionOnSuccess:(MwCallEvent)->Unit={},
+        var actionOnError: (MwCallEvent)->Unit={}
 )
 {
 
@@ -18,11 +28,6 @@ companion object
 {
     private val logger = KotlinLogging.logger {}
 }
-    var actionOnSuccess:()->Unit={}
-        set(value) {field = (value)}
-
-    var actionOnError:()->Unit={}
-        set(value) {field = (value)}
 
     var workingDirectory: File
         get() = processBuilder.directory()
@@ -36,11 +41,11 @@ companion object
         command.addAll(arguments.toList())
         processBuilder = ProcessBuilder(command)
         //set up defaults for the process
-        processBuilder.redirectError()
-        processBuilder.redirectErrorStream()
-        processBuilder.inheritIO()
-        processBuilder.redirectInput()
-        processBuilder.redirectOutput()
+        //processBuilder.redirectError()
+//        processBuilder.redirectErrorStream(true)
+                //        processBuilder.inheritIO()
+//        processBuilder.redirectInput()
+//        processBuilder.redirectOutput()
     }
 
     public fun execute()
@@ -58,15 +63,23 @@ companion object
 
 //                logger.info("done")
                 val exitCode = process.exitValue()
-                if (exitCode!=0)
-                    throw Exception("system called failed with code : $exitCode")
+                val output = buildStringFrom(process.inputStream)
+                val error = buildStringFrom(process.errorStream)
+                val result = MwCallEvent(exitCode = exitCode, output = output, errorStream = error )
+
+                if (exitCode!=0) {
+                    actionOnError.invoke(result)
+                    logger.info("failed to run $exitCode:  \n${this.toString()}")
+                    if (!isConsumeExceptions)
+                        throw Exception("Returned with error code $exitCode")
+                }
                 else
-                    actionOnSuccess.invoke()
+                    actionOnSuccess.invoke(result)
             }
             catch (e : Exception)
             {
                 logger.info("failed with ${e}")
-                actionOnError.invoke()
+                actionOnError.invoke(MwCallEvent(-1,"",e.toString()))
                 if (!isConsumeExceptions)
                     throw e
             }
@@ -77,6 +90,24 @@ companion object
         else
             Thread(action).start()
 
+    }
+
+    fun buildStringFrom(pstream: InputStream):String
+    {
+        val builderOut = StringBuilder()
+        try {
+            val reader = BufferedReader(InputStreamReader(pstream))
+            var line: String = ""
+            while (reader.readLine().also { line = it } != null) {
+                builderOut.append(line)
+                builderOut.append(System.getProperty("line.separator"))
+            }
+        }
+        catch (t:Throwable)
+        {
+
+        }
+        return builderOut.toString()
     }
 
 }

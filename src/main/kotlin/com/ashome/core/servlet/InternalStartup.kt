@@ -1,6 +1,11 @@
 package com.ashome.core.servlet
 
 import com.ashome.tablet.gesture.model.AhGestureBackground
+import com.beyondrelations.microworx.core.service.MwSystemCall
+import com.beyondrelations.microworx.core.service.TwmNode
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.apache.tomcat.util.http.fileupload.FileUtils
 import org.springframework.boot.SpringApplication
@@ -19,7 +24,7 @@ internal open class InternalStartup (args: Array<String> ) {
         logger.info("Instantiating Spring services ... ")
     }
 
-    fun initialized()
+     fun initialized()
     {
         System.setProperty("java.awt.headless", "false")
 //        AhGestureRecorder.static.launch()
@@ -33,6 +38,18 @@ internal open class InternalStartup (args: Array<String> ) {
 //				CoreControllerServices.initializeAccess(servletProperties)
 //		}
         logger.info("Application Initialized ... ")
+
+
+        //i3-msg -t get_tree
+        //simple-tree
+                /*
+        val i3treeGetter = MwSystemCall(program="cat",arguments = listOf("/home/host/host-assets/i3-tree.json"))
+        i3treeGetter.actionOnSuccess = { evt->
+            val tree = TwmNode.deserialize(evt.output)
+            logger.info { evt.output }
+        }
+        i3treeGetter.execute()
+        */
 //        val bgProcess = AhGestureBackground().start()
     }
 
@@ -45,3 +62,4 @@ internal open class InternalStartup (args: Array<String> ) {
     }
 
 }
+

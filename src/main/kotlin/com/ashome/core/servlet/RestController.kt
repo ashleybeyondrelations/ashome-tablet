@@ -19,10 +19,6 @@ internal open class InternalREST( url : String) {
 
     }
 
-    @GetMapping("/showGesture")
-    fun showGesture() {
-        AhGestureRecorder.static.launch()
-    }
 
 
     @GetMapping("/keyEvent")

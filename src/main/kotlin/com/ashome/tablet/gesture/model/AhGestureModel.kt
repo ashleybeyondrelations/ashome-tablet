@@ -1,13 +1,10 @@
 package com.ashome.tablet.gesture.model
 
 import com.beyondrelations.microworx.core.service.MwSystemCall
+import com.beyondrelations.microworx.core.service.TwmNode
+import com.beyondrelations.microworx.core.service.TwmNodeTypeEnum
 import mu.KotlinLogging
 import java.awt.*
-import java.awt.datatransfer.DataFlavor
-import java.awt.event.MouseEvent
-import java.awt.event.MouseMotionListener
-import java.awt.event.WindowAdapter
-import java.awt.event.WindowEvent
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
@@ -15,6 +12,9 @@ import javax.swing.JComponent
 import javax.swing.JFrame
 import javax.swing.JPanel
 import javax.swing.event.MouseInputListener
+import java.awt.Color
+import java.awt.event.*
+import javax.swing.JLabel
 
 
 data class AhGesture(val desc:String, val systemCall: MwSystemCall)
@@ -34,29 +34,273 @@ class AhGestureBackground
     companion object {
         private val logger = KotlinLogging.logger {}
     }
-    fun start(){
+}
 
-        logger.info{ "checking grim" }
+interface AhContextualInterface{
+    val contextualParent: AhContextualInterface?
+    fun gainedFocus()
+}
 
-        val grimCheck = MwSystemCall(program = "grim",arguments = listOf(AhGestureRecorder.screenCapPath), waitForCompletion = true )
-        grimCheck.actionOnSuccess = {
-            logger.info{ "background starting" }
-            val action = {
-                logger.info { "Running grim in background" }
-                while (true)
-                {
-                    Thread.sleep(1 * 1000)
-                    if (!AhGestureRecorder.static.isVisible)
-                        MwSystemCall(program = "grim",arguments = listOf(AhGestureRecorder.screenCapPath), waitForCompletion = true ).execute()
-                }
+open class AhContextualPane(override val contextualParent:AhContextualInterface?,image: BufferedImage?=null,maintainAspectRatio:Boolean = false) :JPanel(), MouseMotionListener, MouseInputListener,AhContextualInterface
+{
+
+    companion object
+    {
+        private val GFX_CONFIG =
+                GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
+
+        fun toCompatibleImage(image: BufferedImage?): BufferedImage? {
+            /*
+ * if image is already compatible and optimized for current system settings, simply return it
+ */
+            if (image == null || image.colorModel == GFX_CONFIG.colorModel) {
+                return image
             }
-            Thread(action).start()
+
+            // image is not optimized, so create a new image that is
+            val new_image = GFX_CONFIG.createCompatibleImage(image.width, image.height, image.transparency)
+
+            // get the graphics context of the new image to draw the old image on
+            val g2d = new_image.graphics as Graphics2D
+
+            // actually draw the image and dispose of context no longer needed
+            g2d.drawImage(image, 0, 0, null)
+            g2d.dispose()
+
+            // return the new optimized image
+            return new_image
         }
-        grimCheck.actionOnError = {
-            logger.info{ "background failed" }
-        }
-        grimCheck.execute()
     }
+
+    override fun paintComponent(g: Graphics)
+    {
+        super.paintComponent(g)
+        paintBackground(g)
+    }
+
+    fun paintBackground(g: Graphics) {
+        //the third param is an ImageObserver. It allows for async images, which sound nice for this context
+        g.drawImage(bgimage,0,0,bgiWidth,bgiHeight,null)
+
+    }
+    fun paintOverlay(g: Graphics) {
+        (g as Graphics2D).stroke = BasicStroke(10F)
+
+        if (lastHeld != null) {
+            g.color = Color.yellow
+//                g.fillOval(current!!.x - 10, current!!.y - 10, 20, 20)
+            g.drawOval(lastHeld!!.x-50, lastHeld!!.y-50,100,100)
+        }
+        if (lastClicked != null) {
+            g.color = Color.red
+            g.drawOval(lastClicked!!.x-50, lastClicked!!.y-50,100,100)
+        }
+        if (lastReleased != null) {
+            g.color = Color.green
+            g.drawOval(lastReleased!!.x-50, lastReleased!!.y-50,100,100)
+        }
+    }
+
+
+    private var bgiWidth:Int=0
+    private var bgiHeight:Int=0
+    private var bgiMaintainAspectRatio:Boolean = false
+        set(value) {
+            field = value
+            adjustImageToPanel()
+        }
+
+
+    private fun adjustImageToPanel()
+    {
+        val image = bgimage
+        if (!bgiMaintainAspectRatio || image == null)
+        {
+            bgiWidth = width
+            bgiHeight = height
+        }
+        else
+        {
+            bgiWidth = width
+            bgiHeight = width * image.height/image.width
+            if (bgiHeight > height) {
+                bgiHeight = height
+                bgiWidth = height * image.width / image.height
+            }
+        }
+        val x = bgiWidth
+    }
+
+    override fun setBounds(x: Int, y: Int, width: Int, height: Int) {
+        super.setBounds(x, y, width, height)
+        adjustImageToPanel()
+    }
+    open fun setImage(image:BufferedImage)
+    {
+        this.bgimage = image
+        adjustImageToPanel()
+
+        this.repaint()
+    }
+
+    private var bgimage: BufferedImage? = null
+        set(value) {
+            field = AhContextualPane.toCompatibleImage(value)
+        }
+    init {
+        this.layout = null
+        this.isVisible = true
+        bgimage = image
+        bgiMaintainAspectRatio = maintainAspectRatio
+    }
+
+    var lastClicked : Point? = null
+    var lastHeld : Point? = null
+    var lastReleased : Point? = null
+
+    override fun mouseClicked(p0: MouseEvent){}
+    override fun mousePressed(p0: MouseEvent){ lastClicked = p0.point ; gainedFocus();this.repaint()}
+    override fun mouseReleased(p0: MouseEvent){ lastReleased = p0.point; this.repaint() }
+    override fun mouseEntered(p0: MouseEvent) {}
+    override fun mouseExited(p0: MouseEvent) {}
+    override fun mouseDragged(p0: MouseEvent) {lastHeld = p0.point; this.repaint()}
+    override fun mouseMoved(p0: MouseEvent) {}
+    var isWaiting = false
+    override fun gainedFocus() {
+        contextualParent?.gainedFocus()
+    }
+}
+
+class AhWindowSelector(override val contextualParent:AhContextualInterface,maintainAspectRatio: Boolean) : AhContextualPane(contextualParent=contextualParent,maintainAspectRatio = maintainAspectRatio)
+{
+
+    init {
+        this.addMouseListener(this)
+        this.addMouseMotionListener(this)
+    }
+    val windows:MutableList<TwmNode> = mutableListOf()
+
+    var scale:Double = 1.0
+
+
+    override fun paintComponent(g: Graphics) {
+
+        super.paintComponent(g)
+        (g as Graphics2D).stroke = BasicStroke(2F)
+        val alpha = 175 // 50% transparent
+
+        for (curNode in windows)
+        {
+            val convertedRect = Rectangle(
+                    (scale*curNode.rect.x).toInt(),
+                    (scale*curNode.rect.y).toInt(),
+                    (scale*curNode.rect.width).toInt(),
+                    (scale*curNode.rect.height).toInt()
+            )
+            g.color = Color(70, 100, 200, alpha)
+
+            if (lastClicked!=null )
+            {
+                if (convertedRect.contains(lastClicked))
+                     g.color = Color(200, 100, 70, alpha)
+            }
+
+            g.fillRect(convertedRect.x,convertedRect.y,convertedRect.width,convertedRect.height)
+
+        }
+        super.paintOverlay(g)
+    }
+
+
+
+}
+ class AhWorkspaceManager(val parent : JFrame) : AhContextualPane(null)
+{
+    companion object{
+        private val logger = KotlinLogging.logger {}
+
+    }
+    private val workspaceSelector = AhWindowSelector(maintainAspectRatio = true, contextualParent = this)
+    init {
+//        workspaceSelector.isVisible = true
+        this.addMouseListener(this)
+        this.addMouseMotionListener(this)
+        this.add(workspaceSelector)
+        this.background = Color.DARK_GRAY;
+    }
+
+    var wmTree: TwmNode? = null
+        set(value) {
+            field=value
+            val activeWorkspace = wmTree!!.getAllDescendantNodes().filter{it.typedef== TwmNodeTypeEnum.workspace && (it.focused || it.getAllDescendantNodes().filter{it.focused}.isNotEmpty()) }.firstOrNull()
+            workspaceSelector.windows.clear()
+            if (activeWorkspace!=null)
+                workspaceSelector.windows.addAll( activeWorkspace.getAllDescendantNodes().filter{ (it.typedef==TwmNodeTypeEnum.con || it.typedef==TwmNodeTypeEnum.floating_con) && it.nodes.isEmpty() })
+
+            logger.info { "found ${workspaceSelector.windows.size} windows" }
+
+        }
+
+    final val selectorSizeRatio = .85
+
+    override fun setBounds(x: Int, y: Int, width: Int, height: Int) {
+        super.setBounds(x, y, width, height)
+        workspaceSelector.setBounds(
+                (0 + (1 - selectorSizeRatio) * width / 2).toInt(),
+                (0 + (1 - selectorSizeRatio) * height / 2).toInt(),
+                (width * selectorSizeRatio).toInt(),
+                (height * selectorSizeRatio).toInt()
+        )
+        workspaceSelector.scale=workspaceSelector.width.toDouble()/parent.width.toDouble()
+    }
+
+    fun setWorkspaceImage(image:BufferedImage)
+    {
+        workspaceSelector.setImage(image = image)
+    }
+    override fun mouseMoved(p0: MouseEvent) {
+        super.mouseMoved(p0)
+    }
+    override fun mousePressed(p0: MouseEvent) {
+        super.mousePressed(p0)
+    }
+
+    override fun mouseReleased(p0: MouseEvent) {
+        super.mouseReleased(p0)
+        parent.dispose()
+//        this.repaint()
+        //           this.repaint(0,0,this.width,this.height)
+    }
+
+    override fun paintComponent(g: Graphics) {
+        super.paintComponent(g)
+//        workspaceSelector.repaint()
+        //the third param is an ImageObserver. It allows for async images, which sound nice for this context
+
+        super.paintOverlay(g)
+
+    }
+
+    override fun gainedFocus() {
+        super.gainedFocus()
+        this.setBounds(0,0,parent.width,parent.height)
+    }
+}
+class AhTest():JPanel() {
+    companion object {
+        private val logger = KotlinLogging.logger {}
+    }
+
+    override fun paintComponent(g: Graphics) {
+        super.paintComponent(g)
+//        workspaceSelector.repaint()
+        //the third param is an ImageObserver. It allows for async images, which sound nice for this context
+        logger.info { "painting test ${this.x}, ${this.y} - ${this.width} x ${this.height}"}
+        g.color = Color.BLUE
+        g.fillRect(0,0,100,100)
+
+    }
+
 }
 class AhGestureRecorder():JFrame("gestureControl")
 {
@@ -64,18 +308,16 @@ class AhGestureRecorder():JFrame("gestureControl")
     companion object {
         private val logger = KotlinLogging.logger {}
         val screenCapPath = "${System.getProperty("user.home")}/.local/state/ashux/screen.png"
-
-        val static = AhGestureRecorder()
-
     }
 
-    private val backgroundPane = ImagePanel()
+    private val workspaceManagement = AhWorkspaceManager(this)
 
     private val frame = this
-    private val overlay = AhGestureOverlay(frame)
+//    private val overlay = AhGestureOverlay(this)
+val testLabel = JLabel("SHOULD SHOW!!!")
+    val backgroundPane = JPanel()
 
     init{
-        frame.add(backgroundPane)
 
         if (GraphicsEnvironment.
                 getLocalGraphicsEnvironment().defaultScreenDevice.isWindowTranslucencySupported(GraphicsDevice.WindowTranslucency.TRANSLUCENT))
@@ -88,11 +330,26 @@ class AhGestureRecorder():JFrame("gestureControl")
         }
 //        frame.isOpaque = false
 //        this.add(JLabel("Should show"))
+        backgroundPane.background = Color.BLACK;
 
-        frame.contentPane.addMouseListener(overlay)
-        frame.contentPane.addMouseMotionListener(overlay)
+        frame.layout = null
+//        frame.add(workspaceManagement)
+//        test.isVisible = true
+//        frame.add(test)
+//        frame.layeredPane.removeAll()
+        frame.contentPane.removeAll()
+//        frame.add(test)
+        frame.add(workspaceManagement)
+        frame.add(backgroundPane)
+//        frame.contentPane = test
 
-        frame.glassPane = overlay
+        frame.contentPane.addMouseListener(workspaceManagement)
+        frame.contentPane.addMouseMotionListener(workspaceManagement)
+
+//        frame.contentPane.addMouseListener(overlay)
+//        frame.contentPane.addMouseMotionListener(workspaceManagement)
+
+//        frame.glassPane = overlay
 
         this.addWindowListener(object : WindowAdapter() {
             override fun windowDeactivated(e: WindowEvent?) {
@@ -106,50 +363,59 @@ class AhGestureRecorder():JFrame("gestureControl")
         })
     }
 
+    val workspaceScale:Double = 0.8
 
+/*    fun fullToInset(prect : Rectangle) : Rectangle
+    {
+        val x = Math.round((1-backgroundScale) * screenSize.width + prect.x * (backgroundScale)).toInt()
+        val y = Math.round((1-backgroundScale) * screenSize.height + prect.y * (backgroundScale)).toInt()
+        val width = Math.round( prect.width * (backgroundScale)).toInt()
+        val height = Math.round( prect.height * (backgroundScale)).toInt()
+        return Rectangle(x,y,width, height)
+    }
+ */
     val robot = Robot()
     var screenSize = Toolkit.getDefaultToolkit().getScreenSize()
 
-    fun launch() {
+    fun display() {
 //        frame.minimumSize = screenSize.size
 
 //            screenSize.width,screenSize.height)
+        logger.info{"updating screen"}
         updateScreenImage()
         frame.pack()
         frame.setBounds(0,0,screenSize.width,screenSize.height)
 
+        backgroundPane.setBounds(0,0,screenSize.width,screenSize.height)
+
+        val insetWidth = Math.round(((1-workspaceScale) * screenSize.width)/2).toInt()
+        val insetHeight = Math.round(((1-workspaceScale) * screenSize.height)/2).toInt()
+
 //        showTest()
+
+
+
         frame.isVisible = true
-        overlay.isVisible = true
+        workspaceManagement.setBounds(insetWidth,insetHeight,screenSize.width-insetWidth*2,screenSize.height-insetHeight*2)
+//        test.setBounds(0,0,1000,1000)
+
+        frame.repaint()
+//        overlay.isVisible = true
+        workspaceManagement.isVisible = true
+        workspaceManagement.repaint()
+//        test.isVisible = true
+//        test.repaint()
+//        overlay.reset()
 //        backgroundPane.isVisible = true
     }
-    fun showTest()
-    {
-        val testPanel = JFrame("gestureControl")
-        val rectangle = Rectangle(Toolkit.getDefaultToolkit().getScreenSize())
-//        testPanel.setGlassPane(TouchPanel(rectangle))
-//        testPanel.add(GestureControl.getScreenImage()?.let { com.ashome.tablet.ImagePanel(it) })
-        val overlay = AhGestureOverlay(testPanel)
-        testPanel.add(backgroundPane)
-        testPanel.contentPane.addMouseListener(overlay)
-        testPanel.contentPane.addMouseMotionListener(overlay)
-
-        testPanel.glassPane = overlay
-
-        testPanel.addWindowListener(object : WindowAdapter() {
-            override fun windowClosing(evt: WindowEvent) {
-                logger.info { "closing" }
-                testPanel.isVisible = false
-            }
-        })
-
-        testPanel.pack()
-        testPanel.setBounds(rectangle.x,rectangle.y,rectangle.width/2,rectangle.height/2)
-
-        overlay.isVisible =true
-        testPanel.isVisible =true
-    }
 //    var image:BufferedImage? = null
+    suspend fun updateUI(tree : TwmNode?)
+    {
+        logger.info { tree }
+
+        workspaceManagement.wmTree = tree
+        workspaceManagement.repaint()
+    }
     fun updateScreenImage()
     {
 
@@ -168,12 +434,12 @@ class AhGestureRecorder():JFrame("gestureControl")
         }
          */
 
-        val systemCall = MwSystemCall(program = "grim",arguments = listOf("-s .2",screenCapPath), waitForCompletion = true,timeout = 2000 )
+        val systemCall = MwSystemCall(program = "grim", arguments = listOf("-s .2",screenCapPath), waitForCompletion = true, timeout = 2000 )
 //        val systemCall = MwSystemCall(program = "grim",arguments = listOf("-","| wl-copy"), waitForCompletion = true,timeout = 2000 )
 
         val setViaRobot = {
             val image = robot.createScreenCapture(Rectangle(Toolkit.getDefaultToolkit().screenSize))
-            backgroundPane.update(image)
+            workspaceManagement.setWorkspaceImage(image)
 //            logger.info{ "size from robot ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
 //            backgroundPane.minimumSize=Dimension(image!!.width,image!!.height)
 //            backgroundPane.repaint()
@@ -183,9 +449,12 @@ class AhGestureRecorder():JFrame("gestureControl")
             val image = ImageIO.read( File(screenCapPath))
 //            val image = ImagePanel.getImageFromClipboard()
             if (image!=null)
-            backgroundPane.update(image,this.width,this.height)
+            {
+                workspaceManagement.setWorkspaceImage(image)
+                workspaceManagement.repaint()
+            }
 //            backgroundPane.image = image
-//            logger.info{ "size from file ${backgroundPane!!.image!!.width} x ${backgroundPane!!.image!!.height} " }
+            logger.info{ "size from file ${image!!.width} x ${image!!.height} " }
 //            backgroundPane.minimumSize=Dimension(image!!.width,image!!.height)
 //            backgroundPane.paint(backgroundPane.graphics)
 //            backgroundPane.repaint()
@@ -203,90 +472,26 @@ class AhGestureRecorder():JFrame("gestureControl")
 
 
 
-    internal class ImagePanel(image: BufferedImage?=null) : JPanel()
-    {
-
-        companion object
-        {
-            private val GFX_CONFIG =
-                GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
-
-//            @Throws(Exception::class)
-            fun getImageFromClipboard(): BufferedImage? {
-                return try {
-                    val transferable = Toolkit.getDefaultToolkit().systemClipboard.getContents(null)
-                    transferable.getTransferData(DataFlavor.imageFlavor) as BufferedImage
-
-                } catch (e:Exception){
-                    null
-                }
-            }
-
-            fun toCompatibleImage(image: BufferedImage?): BufferedImage? {
-                /*
-     * if image is already compatible and optimized for current system settings, simply return it
-     */
-                if (image == null || image.colorModel == GFX_CONFIG.colorModel) {
-                    return image
-                }
-
-                // image is not optimized, so create a new image that is
-                val new_image = GFX_CONFIG.createCompatibleImage(image.width, image.height, image.transparency)
-
-                // get the graphics context of the new image to draw the old image on
-                val g2d = new_image.graphics as Graphics2D
-
-                // actually draw the image and dispose of context no longer needed
-                g2d.drawImage(image, 0, 0, null)
-                g2d.dispose()
-
-                // return the new optimized image
-                return new_image
-            }
-        }
-        var lastPaintedImage : BufferedImage? = null
-        override fun paintComponent(g: Graphics) {
-//        override fun paintComponent(g: Graphics) {
-//            super.paintComponent(g)
-            //the third param is an ImageObserver. It allows for async images, which sound nice for this context
-            if (image!=null)// && (lastPaintedImage!=image || lastPaintedImage ==null))
-            {
-//                image.graphics
-                val localWidth = width ?: image!!.width
-                val localHeight = height ?: image!!.height
-                g.drawImage(image,0,0,localWidth,localHeight,null)
-            }
-        }
-        init{
-        }
-
-        private var width:Int?=null
-        private var height:Int?=null
-        fun update(image:BufferedImage,width:Int?=null,height:Int?=null)
-        {
-            this.image=image
-            this.width = width
-            this.height = height
-            this.repaint()
-        }
-        private var image: BufferedImage? = null
-            set(value) {
-            field = ImagePanel.toCompatibleImage(value)
-        }
-
-        init {
-            this.image = image
-        }
-    }
 
 
-    internal class AhGestureOverlay(val parentFrame : JFrame) : JComponent(), MouseMotionListener, MouseInputListener {
+
+
+    internal class AhGestureOverlay(val parent : AhGestureRecorder) : JComponent(), MouseMotionListener, MouseInputListener {
         var current: Point? = null
         var clicked: Point? = null
         var released: Point? = null
 
+        fun reset()
+        {
+             current = null
+             clicked = null
+             released = null
+        }
+
+
         //React to change button clicks.
         override fun paintComponent(g: Graphics) {
+
 
             (g as Graphics2D).stroke = BasicStroke(10F)
 
@@ -340,7 +545,7 @@ class AhGestureRecorder():JFrame("gestureControl")
 
         override fun mouseReleased(e: MouseEvent) {
             this.released = e.point
-            parentFrame.dispose()
+            parent.dispose()
 //        this.repaint()
  //           this.repaint(0,0,this.width,this.height)
         }
